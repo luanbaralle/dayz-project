@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# status.sh — Exibe status do ambiente DayZ (CPU, memória, processos)
+# status.sh — Painel de diagnóstico do ambiente DayZ
 # =============================================================================
 # Uso: ./status.sh
 # =============================================================================
@@ -15,166 +15,179 @@ load_env
 apply_env_defaults
 
 # -----------------------------------------------------------------------------
-# Funções
+# Painel de diagnóstico
 # -----------------------------------------------------------------------------
 
 print_header() {
   echo ""
   echo "=============================================="
-  echo "  DayZ Project — Status do Ambiente Linux"
+  echo "  DayZ Project — Diagnóstico"
   echo "=============================================="
-  echo "  Data: $(date +'%Y-%m-%d %H:%M:%S')"
+  echo "  $(date +'%Y-%m-%d %H:%M:%S')"
   echo "=============================================="
   echo ""
 }
 
-print_system_resources() {
-  log_step "Recursos do sistema"
-
-  echo "--- Memória ---"
-  free -h
-  echo ""
-
-  echo "--- CPU (load average) ---"
-  uptime
-  echo ""
-
-  echo "--- Disco (${DAYZ_BASE}) ---"
-  if [[ -d "$DAYZ_BASE" ]]; then
-    df -h "$DAYZ_BASE"
-  else
-    log_warn "Diretório base não existe: ${DAYZ_BASE}"
-  fi
-  echo ""
-}
-
-print_dayz_server_status() {
-  log_step "DayZ Dedicated Server"
-
+print_server_panel() {
+  echo "Servidor"
   local pid
   pid="$(get_server_pid)"
-
   if [[ -n "$pid" ]]; then
-    echo "  Status:    RODANDO"
-    echo "  PID:       ${pid}"
-    echo "  Porta:     ${DAYZ_PORT}"
-    echo "  tmux:      ${DAYZ_TMUX_SESSION}"
+    status_ok "Online"
+    status_label "PID" "$pid"
+  else
+    status_fail "Offline"
+    status_label "PID" "—"
+  fi
+  echo ""
+}
 
-    if tmux has-session -t "$DAYZ_TMUX_SESSION" 2>/dev/null; then
-      echo "  Sessão:    ATIVA"
+mod_exists_on_server() {
+  local folder="$1"
+  [[ -d "${DAYZ_SERVER_DIR}/${folder}" ]]
+}
+
+print_mods_panel() {
+  echo "Mods"
+
+  if ! mods_manifest_exists; then
+    status_fail "manifest.yaml ausente"
+    echo ""
+    return
+  fi
+
+  if ! mods_has_parser; then
+    status_fail "python3-yaml ou mods_parser.py indisponível"
+    echo ""
+    return
+  fi
+
+  local any=0 folder order name section
+  while IFS=$'\t' read -r folder order name section; do
+    [[ -z "$folder" ]] && continue
+    any=1
+    if mod_exists_on_server "$folder"; then
+      status_ok "${folder}"
     else
-      echo "  Sessão:    INATIVA (processo órfão?)"
+      status_fail "${folder} (ausente em ${DAYZ_SERVER_DIR})"
     fi
+  done < <(python3 "${DEPLOY_LINUX_DIR}/lib/mods_parser.py" list-client-mods \
+    --manifest "$(mods_manifest_path)" 2>/dev/null || true)
 
-    echo ""
-    echo "  Uso de recursos do processo:"
-    ps -p "$pid" -o pid,ppid,%cpu,%mem,vsz,rss,etime,cmd --no-headers 2>/dev/null || true
+  while IFS=$'\t' read -r folder order name section; do
+    [[ -z "$folder" ]] && continue
+    any=1
+    if mod_exists_on_server "$folder"; then
+      status_ok "${folder} [server]"
+    else
+      status_fail "${folder} [server] (ausente)"
+    fi
+  done < <(python3 "${DEPLOY_LINUX_DIR}/lib/mods_parser.py" list-server-mods \
+    --manifest "$(mods_manifest_path)" 2>/dev/null || true)
 
-    # Processos filhos Wine
-    echo ""
-    echo "  Processos Wine relacionados:"
-    pgrep -a -f "wineserver|wine.*DayZ" 2>/dev/null || echo "    (nenhum)"
-  else
-    echo "  Status:    PARADO"
-    echo "  PID:       —"
+  if [[ "$any" -eq 0 ]]; then
+    status_label "" "(nenhum mod habilitado)"
   fi
   echo ""
 }
 
-print_wine_status() {
-  log_step "Wine"
-
-  if command_exists wine; then
-    echo "  Versão:    $(wine --version 2>/dev/null || echo 'desconhecida')"
-  else
-    echo "  Versão:    NÃO INSTALADO"
-  fi
-
-  echo "  WINEPREFIX: ${WINEPREFIX}"
-
-  if [[ -d "$WINEPREFIX" ]]; then
-    echo "  Prefixo:   EXISTE ($(du -sh "$WINEPREFIX" 2>/dev/null | cut -f1))"
-  else
-    echo "  Prefixo:   NÃO CRIADO"
-  fi
-  echo ""
-}
-
-print_steamcmd_status() {
-  log_step "SteamCMD"
-
+print_steamcmd_panel() {
+  echo "SteamCMD"
   local steamcmd_bin="${STEAMCMD_DIR}/steamcmd.sh"
-
-  if [[ -x "$steamcmd_bin" ]]; then
-    echo "  Status:    INSTALADO"
-    echo "  Caminho:   ${steamcmd_bin}"
+  if [[ -x "$steamcmd_bin" ]] && [[ -f "${DAYZ_SERVER_DIR}/DayZServer_x64.exe" ]]; then
+    status_ok "OK"
+  elif [[ -x "$steamcmd_bin" ]]; then
+    status_warn "SteamCMD OK — DayZ Server não instalado"
   else
-    echo "  Status:    NÃO INSTALADO"
+    status_fail "Não instalado"
   fi
+  echo ""
+}
 
-  if [[ -d "$DAYZ_SERVER_DIR" ]]; then
-    echo "  Servidor:  ${DAYZ_SERVER_DIR} ($(du -sh "$DAYZ_SERVER_DIR" 2>/dev/null | cut -f1))"
-    if [[ -f "${DAYZ_SERVER_DIR}/DayZServer_x64.exe" ]]; then
-      echo "  Executável: OK"
-    else
-      echo "  Executável: AUSENTE"
+print_wine_panel() {
+  echo "Wine"
+  if command_exists wine && [[ -d "$WINEPREFIX" ]]; then
+    status_ok "OK ($(wine --version 2>/dev/null || echo 'wine'))"
+  elif command_exists wine; then
+    status_warn "Wine instalado — prefixo ausente (${WINEPREFIX})"
+  else
+    status_fail "Não instalado"
+  fi
+  echo ""
+}
+
+print_profiles_panel() {
+  echo "Profiles"
+  if [[ -d "$DAYZ_PROFILES_DIR" ]]; then
+    status_ok "OK"
+  else
+    status_fail "Diretório ausente: ${DAYZ_PROFILES_DIR}"
+  fi
+  echo ""
+}
+
+print_mission_panel() {
+  echo "Mission"
+  local template short_name
+  template="$(mods_get_mission_template 2>/dev/null || true)"
+  if [[ -n "$template" ]]; then
+    short_name="${template##*.}"
+    status_label "" "${short_name}"
+    if [[ ! -d "${DAYZ_SERVER_DIR}/mpmissions/${template}" ]]; then
+      status_fail "mpmissions/${template} não encontrada"
     fi
   else
-    echo "  Servidor:  NÃO INSTALADO"
+    status_label "" "(não detectada)"
   fi
   echo ""
 }
 
-print_project_status() {
-  log_step "Projeto Git"
-
-  if [[ -d "${DAYZ_PROJECT_DIR}/.git" ]]; then
-    echo "  Repositório: ${DAYZ_PROJECT_DIR}"
-    echo "  Branch:      $(git -C "$DAYZ_PROJECT_DIR" branch --show-current 2>/dev/null || echo '?')"
-    echo "  Commit:      $(git -C "$DAYZ_PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
-    echo "  Remote:      $(git -C "$DAYZ_PROJECT_DIR" remote get-url origin 2>/dev/null || echo '?')"
-  else
-    echo "  Repositório: NÃO CLONADO"
-    echo "  Esperado em: ${DAYZ_PROJECT_DIR}"
-  fi
-  echo ""
-}
-
-print_directory_status() {
-  log_step "Diretórios"
-
-  local dirs=(
-    "Base:${DAYZ_BASE}"
-    "Server:${DAYZ_SERVER_DIR}"
-    "Project:${DAYZ_PROJECT_DIR}"
-    "Profiles:${DAYZ_PROFILES_DIR}"
-    "Backups:${DAYZ_BACKUPS_DIR}"
-    "Logs:${DAYZ_LOGS_DIR}"
-    "SteamCMD:${STEAMCMD_DIR}"
-  )
-
-  for entry in "${dirs[@]}"; do
-    local label="${entry%%:*}"
-    local path="${entry#*:}"
-    if [[ -d "$path" ]]; then
-      printf "  %-12s %s (%s)\n" "${label}:" "$path" "$(du -sh "$path" 2>/dev/null | cut -f1)"
-    else
-      printf "  %-12s %s (AUSENTE)\n" "${label}:" "$path"
-    fi
-  done
-  echo ""
-}
-
-print_network_ports() {
-  log_step "Portas de rede"
-
+print_port_panel() {
+  echo "Porta"
+  status_label "" "${DAYZ_PORT}"
   if command_exists ss; then
-    echo "  Porta ${DAYZ_PORT} (DayZ):"
-    ss -tulnp 2>/dev/null | grep ":${DAYZ_PORT} " || echo "    (não em escuta)"
-  else
-    log_warn "Comando 'ss' não disponível — pulando verificação de portas."
+    if ss -tulnp 2>/dev/null | grep -q ":${DAYZ_PORT} "; then
+      status_ok "em escuta"
+    fi
   fi
   echo ""
+}
+
+print_version_panel() {
+  echo "Versão"
+  local build
+  build="$(mods_get_server_build 2>/dev/null || echo "unknown")"
+  if [[ "$build" != "unknown" ]]; then
+    status_label "" "build ${build}"
+  else
+    status_label "" "desconhecida"
+  fi
+  echo ""
+}
+
+print_validation_hint() {
+  if mods_manifest_exists && mods_has_parser; then
+    if ! validation_run true 2>/dev/null; then
+      echo "Validação"
+      status_fail "erros críticos — execute ./validate.sh"
+      echo ""
+    fi
+  fi
+}
+
+print_extended_details() {
+  log_step "Detalhes do sistema"
+  echo "--- Memória ---"
+  free -h 2>/dev/null || true
+  echo ""
+  echo "--- Disco (${DAYZ_BASE}) ---"
+  df -h "$DAYZ_BASE" 2>/dev/null || log_warn "Base ausente: ${DAYZ_BASE}"
+  echo ""
+  if [[ -n "$(get_server_pid)" ]]; then
+    echo "--- Processo ---"
+    ps -p "$(get_server_pid)" -o pid,ppid,%cpu,%mem,etime,cmd --no-headers 2>/dev/null || true
+    echo ""
+  fi
 }
 
 # -----------------------------------------------------------------------------
@@ -183,13 +196,16 @@ print_network_ports() {
 
 main() {
   print_header
-  print_system_resources
-  print_dayz_server_status
-  print_wine_status
-  print_steamcmd_status
-  print_project_status
-  print_directory_status
-  print_network_ports
+  print_server_panel
+  print_mods_panel
+  print_steamcmd_panel
+  print_wine_panel
+  print_profiles_panel
+  print_mission_panel
+  print_port_panel
+  print_version_panel
+  print_validation_hint
+  print_extended_details
 }
 
 main "$@"

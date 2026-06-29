@@ -38,18 +38,30 @@ Infraestrutura reproduzível para executar o **DayZ Dedicated Server** em **Ubun
 
 ---
 
-## Bootstrap (VPS nova)
+## Camadas de operação
 
-Uma VPS Ubuntu 24.04 limpa pode ser preparada com um único comando:
+| Camada | Script | Quando usar |
+|--------|--------|-------------|
+| **Bootstrap** | `bootstrap.sh` | Uma vez na vida da VPS — prepara SO e estrutura |
+| **Provisioning** | `install_dayz.sh`, `install_mods.sh`* | Instalar/atualizar binários Steam |
+| **Atualização** | `update.sh` | `git pull` + SteamCMD + mods + deploy |
+| **Deploy** | `deploy.sh` | Sincronizar Git → runtime (rsync only) |
+| **Operação** | `start.sh`, `stop.sh`, `restart.sh` | Controlar o processo do servidor |
+| **Validação** | `validate.sh` | Verificar manifest, mods e ambiente antes do start |
+
+\* `install_mods.sh` — lê `mods/manifest.yaml`, Workshop + locais
+
+---
+
+## Bootstrap (VPS nova — executar UMA VEZ)
+
+Prepara a máquina. **Não** instala DayZ, **não** clona Git, **não** faz deploy.
 
 ```bash
-# 1. Clone o repositório (ou copie os scripts)
-git clone https://github.com/SEU_USUARIO/dayz-project.git
-cd dayz-project
-
-# 2. Execute o bootstrap como root
-chmod +x deploy/linux/*.sh
-sudo ./deploy/linux/bootstrap.sh
+# Copie os scripts ou clone o repositório
+git clone https://github.com/SEU_USUARIO/dayz-project.git /tmp/dayz-project
+chmod +x /tmp/dayz-project/deploy/linux/*.sh
+sudo /tmp/dayz-project/deploy/linux/bootstrap.sh
 ```
 
 ### O que o bootstrap faz
@@ -59,13 +71,13 @@ bootstrap.sh
     ├── install_dependencies.sh   # git, curl, tmux, rsync, etc.
     ├── install_wine.sh           # Wine 64 + Wine32 + WINEPREFIX
     ├── install_steamcmd.sh       # SteamCMD
-    ├── configure_environment.sh  # (se .env não existir) cria diretórios + .env
-    ├── install_dayz.sh           # DayZ Dedicated Server (login Steam)
-    └── configure_environment.sh  # Finaliza diretórios + git clone
+    └── configure_environment.sh  # diretórios + .env (nunca sobrescreve)
 ```
 
-Todos os scripts são **idempotentes** — podem ser reexecutados com segurança.
-O bootstrap **nunca apaga** o `.env` nem sobrescreve configurações existentes.
+O bootstrap **não** chama: `install_dayz.sh`, `deploy.sh`, `start.sh`, `git pull`.
+
+Componentes de sistema (APT, Wine, SteamCMD) são idempotentes.
+O `.env` existente **nunca é sobrescrito**.
 
 ---
 
@@ -100,7 +112,7 @@ STEAM_USERNAME=seu_usuario_steam
 > A conta Steam deve possuir a licença do **DayZ Dedicated Server**.
 > A **senha não é armazenada** em arquivo — veja [Autenticação Steam](#autenticação-steam).
 
-**4. Instale o servidor** (senha solicitada interativamente na primeira vez):
+**4. Instale o DayZ Server** (senha solicitada interativamente na primeira vez):
 
 ```bash
 sudo ./deploy/linux/install_dayz.sh
@@ -109,13 +121,21 @@ sudo ./deploy/linux/install_dayz.sh
 O script pedirá a senha com `read -s` (não exibida, não gravada em disco).
 Se a conta usar **Steam Guard**, o SteamCMD solicitará o código no terminal.
 
-ou reexecute o bootstrap completo (idempotente):
+**5. Clone o repositório Git:**
 
 ```bash
-sudo ./deploy/linux/bootstrap.sh
+sudo -u ubuntu git clone https://github.com/SEU_USUARIO/dayz-project.git /home/ubuntu/dayz/project
 ```
 
-**5. Verifique a instalação:**
+**6. Sincronize e inicie:**
+
+```bash
+cd /home/ubuntu/dayz/project/deploy/linux
+./deploy.sh
+./start.sh
+```
+
+**7. Verifique a instalação:**
 
 ```bash
 ./deploy/linux/status.sh
@@ -171,19 +191,32 @@ Normalmente **não será necessário informar a senha novamente**.
 
 ```
 deploy/linux/
-├── bootstrap.sh              # Orquestrador principal
+├── bootstrap.sh              # Preparação inicial da VPS (uma vez)
+├── update.sh                 # git pull + SteamCMD + deploy
+├── configure_environment.sh  # Diretórios + .env (interno ao bootstrap)
 ├── install_dependencies.sh   # Pacotes APT base
 ├── install_wine.sh           # Wine 64 + 32 bits
 ├── install_steamcmd.sh       # SteamCMD
 ├── install_dayz.sh           # DayZ Server via SteamCMD
-├── configure_environment.sh  # Diretórios e .env
-├── deploy.sh                 # Sync projeto → servidor
-├── start.sh                  # Inicia servidor (Wine + tmux)
+├── install_mods.sh           # Mods Workshop + locais (manifest.yaml)
+├── deploy.sh                 # Rsync Git → runtime (sem git pull)
+├── start.sh                  # Inicia servidor (Wine + tmux, manifest-driven)
+├── validate.sh               # Validação declarativa pré-start
 ├── stop.sh                   # Encerra servidor
 ├── restart.sh                # stop + start
 ├── logs.sh                   # Logs em tempo real
-├── status.sh                 # CPU, memória, processos
-├── common.sh                 # Funções compartilhadas
+├── status.sh                 # Painel de diagnóstico
+├── common.sh                 # Fachada — carrega lib/
+├── lib/
+│   ├── env.sh                # Variáveis de ambiente
+│   ├── log.sh                # Logging e painel de status
+│   ├── filesystem.sh         # Diretórios e APT
+│   ├── process.sh            # PID / processo do servidor
+│   ├── steam.sh              # SteamCMD + autenticação
+│   ├── mods.sh               # Interface bash → manifest.yaml
+│   ├── mods_parser.py        # Parser/validador Python (CI-ready)
+│   ├── validation.sh         # Validação do ambiente
+│   └── launch.sh             # Montagem de parâmetros e start
 ├── .env.example              # Template de variáveis
 └── README.md                 # Este arquivo
 ```
@@ -229,24 +262,44 @@ chmod 600 /home/ubuntu/dayz/.env
 
 ## Operação diária
 
-Todos os comandos abaixo são executados a partir de `deploy/linux/`:
+### Fluxo de desenvolvimento (após setup inicial)
+
+```
+Cursor → git commit → git push
+         ↓
+Oracle VPS → git pull → deploy.sh → restart.sh
+```
+
+```bash
+cd /home/ubuntu/dayz/project
+git pull
+./deploy/linux/deploy.sh
+./deploy/linux/restart.sh
+```
+
+> `deploy.sh` **não** executa `git pull`. Atualize o repositório antes do deploy.
+
+### Atualização completa (jogo + mods + configs)
 
 ```bash
 cd /home/ubuntu/dayz/project/deploy/linux
+./update.sh        # git pull → install_dayz → install_mods* → deploy
+./restart.sh       # se necessário
 ```
 
-### Deploy (sync configs do Git)
+### Deploy (somente sincronização)
 
 ```bash
 ./deploy.sh
 ```
 
-Sincroniza `config/`, `profiles/` e `missions/` do repositório para os diretórios de runtime.
+Sincroniza `config/`, `profiles/` e `missions/` do repositório para runtime via rsync.
 
 ### Iniciar / parar / reiniciar
 
 ```bash
-./start.sh      # Inicia via Wine em sessão tmux
+./validate.sh   # Opcional — start.sh valida automaticamente
+./start.sh      # Inicia via Wine em sessão tmux (bloqueia se validação falhar)
 ./stop.sh       # Encerra graciosamente (SIGTERM → SIGKILL)
 ./restart.sh    # stop + start
 ```
@@ -254,8 +307,9 @@ Sincroniza `config/`, `profiles/` e `missions/` do repositório para os diretór
 ### Monitoramento
 
 ```bash
-./status.sh     # CPU, memória, Wine, SteamCMD, processo DayZ
+./status.sh     # Painel de diagnóstico (servidor, mods, Wine, missão, versão)
 ./logs.sh       # Tail em tempo real dos logs
+./validate.sh   # Validação completa do manifest e ambiente
 ```
 
 Para anexar à sessão tmux do servidor:
@@ -273,9 +327,9 @@ tmux attach-session -t dayz-server
 Cursor (Windows)
       ↓ git commit + push
 GitHub
-      ↓ git pull (VPS)
+      ↓ git pull (VPS — manual ou via update.sh)
 deploy.sh
-      ↓ rsync configs
+      ↓ rsync (sem git pull interno)
 restart.sh
       ↓
 DayZ Server rodando via Wine
@@ -303,7 +357,23 @@ wine DayZServer_x64.exe
   -freezecheck -adminlog -dologs
 ```
 
-> **Mods:** não instalados nesta fase. Variáveis `DAYZ_MODS` e `DAYZ_SERVER_MODS` estão preparadas no `.env` para uso futuro.
+> **Mods:** `mods/manifest.yaml` é a fonte de verdade. `start.sh` gera `-mod=` e `-serverMod=` automaticamente a partir do manifest (sem variáveis no `.env`).
+
+### Manifest de mods (`mods/manifest.yaml`)
+
+Cada mod suporta metadados declarativos:
+
+| Campo | Descrição |
+|-------|-----------|
+| `name` | Nome legível |
+| `id` | Workshop ID (client/server mods) |
+| `folder` | Pasta no servidor (ex: `@CF`) |
+| `required` | Se `true`, `validate.sh` bloqueia o start se ausente |
+| `enabled` | Se `false`, ignorado em install/start |
+| `load_order` | Ordem de carregamento (menor = primeiro) |
+| `depends_on` | Pastas que devem carregar antes |
+
+`validate.sh` verifica: YAML válido, IDs/pastas duplicados, mods ausentes, `.bikey`, dependências, `serverDZ.cfg`, missão e diretórios obrigatórios.
 
 ---
 
@@ -361,22 +431,25 @@ rm -rf /home/ubuntu/.wine-dayz
 sudo ./install_wine.sh
 ```
 
-### Bootstrap completo (reinstalar tudo)
+### Reexecutar bootstrap (apenas componentes de sistema)
 
 ```bash
-sudo ./bootstrap.sh                  # Seguro — idempotente
+sudo ./bootstrap.sh    # Idempotente — não reinstala DayZ nem faz deploy
 ```
 
 ---
 
 ## Expansões futuras
 
-- [ ] Instalação de mods via Steam Workshop (`install_mods.sh`)
+- [x] Separação bootstrap / update / deploy (Fase 1)
+- [x] `mods/manifest.yaml` + `install_mods.sh` (Fase 2)
+- [x] Validação declarativa + `lib/` modular + painel `status.sh` (Fase 3)
 - [ ] Serviço systemd para auto-start
 - [ ] Backup automático antes do deploy
 - [ ] GitHub Actions para deploy remoto
 - [ ] Validação de `serverDZ.cfg` no CI
 - [ ] Rollback de deploy
+- [ ] Remover fachada `common.sh` (imports diretos de `lib/`)
 
 ---
 

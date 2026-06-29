@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy.sh — Sincroniza arquivos do projeto para a instalação do servidor
+# deploy.sh — Sincroniza arquivos do projeto Git para o ambiente de runtime
 # =============================================================================
-# Uso: ./deploy.sh
-# Requer: repositório clonado em DAYZ_PROJECT_DIR
+# Responsabilidade única: rsync.
 #
-# PLACEHOLDER: implementação básica com rsync.
-# Expanda este script conforme o pipeline de deploy amadurecer.
+# Sincroniza: config/, profiles/, missions/, mods/local/, mods/keys/
+#
+# NÃO executa: git, SteamCMD, start, stop, install_mods
+#
+# Fluxo diário:
+#   cd $PROJECT_DIR && git pull
+#   ./deploy/linux/deploy.sh
+#   ./deploy/linux/restart.sh
 # =============================================================================
 
 set -euo pipefail
@@ -24,20 +29,21 @@ apply_env_defaults
 
 validate_project() {
   if [[ ! -d "${DAYZ_PROJECT_DIR}/.git" ]]; then
-    log_error "Repositório não encontrado em ${DAYZ_PROJECT_DIR}"
-    log_error "Configure GIT_REPO_URL em ${DAYZ_ENV_FILE} e execute configure_environment.sh"
+    log_error "Repositório Git não encontrado em ${DAYZ_PROJECT_DIR}"
+    log_error "Clone o projeto antes do deploy:"
+    log_error "  git clone <url> ${DAYZ_PROJECT_DIR}"
     exit 1
   fi
 }
 
-pull_latest_changes() {
-  log_step "Atualizando repositório (git pull)"
-
-  git -C "$DAYZ_PROJECT_DIR" fetch --all --prune
-  git -C "$DAYZ_PROJECT_DIR" checkout "${GIT_BRANCH:-main}"
-  git -C "$DAYZ_PROJECT_DIR" pull --ff-only
-
-  log_info "Repositório atualizado: $(git -C "$DAYZ_PROJECT_DIR" rev-parse --short HEAD)"
+resolve_profiles_source() {
+  # Compatibilidade: profiles/config/ (futuro) ou profiles/ (legado)
+  local config_path="${DAYZ_PROJECT_DIR}/profiles/config"
+  if [[ -d "$config_path" ]]; then
+    echo "$config_path"
+    return 0
+  fi
+  echo "${DAYZ_PROJECT_DIR}/profiles"
 }
 
 sync_config_files() {
@@ -46,12 +52,10 @@ sync_config_files() {
   local config_src="${DAYZ_PROJECT_DIR}/config"
 
   if [[ ! -d "$config_src" ]]; then
-    log_warn "Diretório config/ não encontrado no projeto — pulando."
+    log_warn "Diretório config/ não encontrado — pulando."
     return 0
   fi
 
-  # Copia configs versionadas (serverDZ.cfg, etc.)
-  # Nota: Start_Server.bat é Windows-only; serverDZ.cfg é usado pelo start.sh Linux
   rsync -av --checksum \
     --include='serverDZ.cfg' \
     --include='*.xml' \
@@ -64,22 +68,24 @@ sync_config_files() {
 }
 
 sync_profiles() {
-  log_step "Sincronizando profiles/ do projeto → ${DAYZ_PROFILES_DIR}"
+  local profiles_src
+  profiles_src="$(resolve_profiles_source)"
 
-  local profiles_src="${DAYZ_PROJECT_DIR}/profiles"
+  log_step "Sincronizando ${profiles_src} → ${DAYZ_PROFILES_DIR}"
 
   if [[ ! -d "$profiles_src" ]]; then
-    log_warn "Diretório profiles/ não encontrado no projeto — pulando."
+    log_warn "Diretório de profiles não encontrado — pulando."
     return 0
   fi
 
-  # Sincroniza configs versionadas, exclui logs e runtime
   rsync -av --checksum \
     --exclude='*.RPT' \
     --exclude='*.ADM' \
     --exclude='*.log' \
+    --exclude='README.md' \
     --exclude='DataCache/' \
     --exclude='BattlEye/' \
+    --exclude='runtime/' \
     --exclude='Users/Survivor/' \
     --exclude='VPPAdminTools/Logging/' \
     --exclude='VPPAdminTools/Backups/' \
@@ -91,7 +97,7 @@ sync_profiles() {
 }
 
 sync_missions() {
-  log_step "Sincronizando missions/ (se existirem)"
+  log_step "Sincronizando missions/ → ${DAYZ_SERVER_DIR}/mpmissions"
 
   local missions_src="${DAYZ_PROJECT_DIR}/missions"
   local missions_dest="${DAYZ_SERVER_DIR}/mpmissions"
@@ -101,31 +107,72 @@ sync_missions() {
     return 0
   fi
 
-  # Copia apenas subdiretórios de missão (ignora README.md na raiz)
+  mkdir -p "$missions_dest"
+
   rsync -av --checksum \
     --exclude='README.md' \
-    "${missions_src}/" "${missions_dest}/" 2>/dev/null || {
-      log_warn "Diretório mpmissions/ não existe ainda — será criado na primeira missão."
-      mkdir -p "$missions_dest"
-      rsync -av --checksum --exclude='README.md' "${missions_src}/" "${missions_dest}/"
-    }
+    "${missions_src}/" "${missions_dest}/"
 
   log_info "Missões sincronizadas."
 }
 
+sync_mods_local() {
+  log_step "Sincronizando mods/local/ → ${DAYZ_SERVER_DIR}"
+
+  local local_src="${DAYZ_PROJECT_DIR}/mods/local"
+
+  if [[ ! -d "$local_src" ]]; then
+    log_info "mods/local/ não encontrado — pulando."
+    return 0
+  fi
+
+  # Sincroniza apenas pastas @Mod (não manifest, keys, README)
+  rsync -av --checksum \
+    --include='@*/' \
+    --include='@*/**' \
+    --exclude='*' \
+    "${local_src}/" "${DAYZ_SERVER_DIR}/"
+
+  log_info "Mods locais sincronizados."
+}
+
+sync_mods_keys() {
+  log_step "Sincronizando mods/keys/ → ${DAYZ_SERVER_DIR}/keys"
+
+  local keys_src="${DAYZ_PROJECT_DIR}/mods/keys"
+
+  if [[ ! -d "$keys_src" ]]; then
+    log_info "mods/keys/ não encontrado — pulando."
+    return 0
+  fi
+
+  mkdir -p "${DAYZ_SERVER_DIR}/keys"
+
+  rsync -av --checksum \
+    --include='*.bikey' \
+    --exclude='*' \
+    "${keys_src}/" "${DAYZ_SERVER_DIR}/keys/"
+
+  log_info "Chaves de mods sincronizadas."
+}
+
 print_deploy_summary() {
-  log_step "Deploy concluído (placeholder)"
+  local commit
+  commit="$(git -C "$DAYZ_PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+
+  log_step "Deploy concluído"
   cat <<EOF
-Arquivos sincronizados do projeto para o servidor.
+Commit sincronizado: ${commit}
 
-Para aplicar alterações em runtime:
+Destinos:
+  config      → ${DAYZ_SERVER_DIR}
+  profiles    → ${DAYZ_PROFILES_DIR}
+  missions    → ${DAYZ_SERVER_DIR}/mpmissions
+  mods/local  → ${DAYZ_SERVER_DIR}
+  mods/keys   → ${DAYZ_SERVER_DIR}/keys
+
+Para aplicar em runtime:
   ${SCRIPT_DIR}/restart.sh
-
-TODO (expansões futuras):
-  - Instalar/atualizar mods via Steam Workshop
-  - Backup automático antes do deploy
-  - Validação de serverDZ.cfg
-  - Rollback em caso de falha
 
 EOF
 }
@@ -135,12 +182,13 @@ EOF
 # -----------------------------------------------------------------------------
 
 main() {
-  log_step "DayZ Project — Deploy"
+  log_step "DayZ Project — Deploy (rsync)"
   validate_project
-  pull_latest_changes
   sync_config_files
   sync_profiles
   sync_missions
+  sync_mods_local
+  sync_mods_keys
   print_deploy_summary
 }
 

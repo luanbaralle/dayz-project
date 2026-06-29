@@ -39,6 +39,7 @@ install_base_packages() {
     ca-certificates
     gnupg
     locales
+    python3-yaml
   )
 
   apt_install "${packages[@]}"

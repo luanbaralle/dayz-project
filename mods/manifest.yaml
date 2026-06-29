@@ -1,0 +1,39 @@
+# =============================================================================
+# mods/manifest.yaml — Fonte única de verdade para mods do servidor
+# =============================================================================
+# Campos por mod:
+#   name         — nome legível
+#   id           — Workshop ID (client_mods / server_mods)
+#   folder       — pasta no servidor (ex: @CF)
+#   required     — se true, validate.sh bloqueia start se ausente
+#   enabled      — se false, mod ignorado em install/start
+#   load_order   — ordem de carregamento (menor = primeiro)
+#   depends_on   — pastas @Mod que devem carregar antes
+#
+# Não configure mods em .env — apenas aqui.
+# =============================================================================
+
+version: 1
+workshop_app_id: 221100
+
+client_mods:
+  - name: Community Framework
+    id: 1559212036
+    folder: "@CF"
+    required: true
+    enabled: true
+    load_order: 10
+    depends_on: []
+
+  - name: VPPAdminTools
+    id: 1828439124
+    folder: "@VPPAdminTools"
+    required: true
+    enabled: true
+    load_order: 20
+    depends_on:
+      - "@CF"
+
+server_mods: []
+
+local_mods: []
