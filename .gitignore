@@ -1,0 +1,68 @@
+# =============================================================================
+# DayZ Server Project - .gitignore
+# =============================================================================
+
+# --- DayZ runtime logs and crash dumps ---
+*.RPT
+*.ADM
+*.log
+*.mdmp
+*.mdmp.*
+
+# --- Cache and temporary files ---
+cache/
+temp/
+tmp/
+**/DataCache/
+**/DataCache/**
+*.ch
+
+# --- Backups (local only) ---
+backups/**
+!backups/README.md
+**/Backups/
+**/Backups/**
+
+# --- Auto-generated profile data ---
+profiles/Users/Survivor/
+profiles/BattlEye/
+profiles/**/Exports/
+profiles/**/Logging/
+
+# --- Sensitive credentials (never commit) ---
+profiles/VPPAdminTools/Permissions/credentials.txt
+tools/ssh/*.key
+tools/ssh/*.pem
+*.key
+*.pem
+!*.key.pub
+
+# --- IDE and editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS artifacts ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+ehthumbs.db
+
+# --- Steam / official server installation (external dependency) ---
+# The DayZ Server binaries and mods live outside this repository.
+# Default path: C:\Program Files (x86)\Steam\steamapps\common\DayZServer
+
+# --- Server binaries and workshop content ---
+server/steamapps/
+*.exe
+*.dll
+*.pbo
+*.bisign
+*.bikey
+
+# --- Node / tooling (future) ---
+node_modules/
+.env
+.env.*
