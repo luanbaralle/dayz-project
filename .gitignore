@@ -66,3 +66,4 @@ server/steamapps/
 node_modules/
 .env
 .env.*
+!deploy/linux/.env.example
