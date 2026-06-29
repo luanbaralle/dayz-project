@@ -31,6 +31,7 @@ load_env() {
     # shellcheck disable=SC1090
     source "$DAYZ_ENV_FILE"
     set +a
+    normalize_env_aliases
     return 0
   fi
 
@@ -40,6 +41,7 @@ load_env() {
     # shellcheck disable=SC1091
     source "${DEPLOY_LINUX_DIR}/.env.example"
     set +a
+    normalize_env_aliases
     log_warn "Usando .env.example — execute configure_environment.sh para gerar ${DAYZ_ENV_FILE}"
     return 0
   fi
@@ -66,10 +68,13 @@ DAYZ_TMUX_SESSION="${DAYZ_TMUX_SESSION:-dayz-server}"
 
 apply_env_defaults() {
   DAYZ_USER="${DAYZ_USER:-ubuntu}"
-  DAYZ_BASE="${DAYZ_BASE:-/home/ubuntu/dayz}"
+  DAYZ_HOME="${DAYZ_HOME:-/home/ubuntu/dayz}"
+  DAYZ_BASE="${DAYZ_BASE:-${DAYZ_HOME}}"
   DAYZ_SERVER_DIR="${DAYZ_SERVER_DIR:-${DAYZ_BASE}/server}"
-  DAYZ_PROJECT_DIR="${DAYZ_PROJECT_DIR:-${DAYZ_BASE}/project}"
-  DAYZ_PROFILES_DIR="${DAYZ_PROFILES_DIR:-${DAYZ_BASE}/profiles}"
+  PROJECT_DIR="${PROJECT_DIR:-${DAYZ_BASE}/project}"
+  DAYZ_PROJECT_DIR="${DAYZ_PROJECT_DIR:-${PROJECT_DIR}}"
+  PROFILE_DIR="${PROFILE_DIR:-${DAYZ_BASE}/profiles}"
+  DAYZ_PROFILES_DIR="${DAYZ_PROFILES_DIR:-${PROFILE_DIR}}"
   DAYZ_BACKUPS_DIR="${DAYZ_BACKUPS_DIR:-${DAYZ_BASE}/backups}"
   DAYZ_LOGS_DIR="${DAYZ_LOGS_DIR:-${DAYZ_BASE}/logs}"
   STEAMCMD_DIR="${STEAMCMD_DIR:-${DAYZ_BASE}/steamcmd}"
@@ -77,8 +82,24 @@ apply_env_defaults() {
   DAYZ_PORT="${DAYZ_PORT:-2302}"
   DAYZ_CONFIG="${DAYZ_CONFIG:-serverDZ.cfg}"
   DAYZ_APP_ID="${DAYZ_APP_ID:-223350}"
+  STEAM_PLATFORM="${STEAM_PLATFORM:-windows}"
+  STEAMCMD_PLATFORM="${STEAMCMD_PLATFORM:-${STEAM_PLATFORM}}"
   DAYZ_PID_FILE="${DAYZ_PID_FILE:-${DAYZ_BASE}/dayz-server.pid}"
   DAYZ_TMUX_SESSION="${DAYZ_TMUX_SESSION:-dayz-server}"
+  DAYZ_MAIN_LOG="${DAYZ_MAIN_LOG:-${DAYZ_LOGS_DIR}/dayz-server.log}"
+  normalize_env_aliases
+}
+
+# Unifica nomes novos (DAYZ_HOME, PROJECT_DIR) com aliases legados
+normalize_env_aliases() {
+  DAYZ_HOME="${DAYZ_HOME:-${DAYZ_BASE:-/home/ubuntu/dayz}}"
+  DAYZ_BASE="${DAYZ_BASE:-$DAYZ_HOME}"
+  PROJECT_DIR="${PROJECT_DIR:-${DAYZ_PROJECT_DIR:-${DAYZ_HOME}/project}}"
+  DAYZ_PROJECT_DIR="${DAYZ_PROJECT_DIR:-$PROJECT_DIR}"
+  PROFILE_DIR="${PROFILE_DIR:-${DAYZ_PROFILES_DIR:-${DAYZ_HOME}/profiles}}"
+  DAYZ_PROFILES_DIR="${DAYZ_PROFILES_DIR:-$PROFILE_DIR}"
+  STEAM_PLATFORM="${STEAM_PLATFORM:-${STEAMCMD_PLATFORM:-windows}}"
+  STEAMCMD_PLATFORM="${STEAMCMD_PLATFORM:-$STEAM_PLATFORM}"
 }
 
 # -----------------------------------------------------------------------------
@@ -197,4 +218,34 @@ ensure_dayz_user() {
 
   log_info "Criando usuário ${DAYZ_USER}..."
   useradd -m -s /bin/bash "$DAYZ_USER"
+}
+
+is_dayz_installed() {
+  [[ -f "${DAYZ_SERVER_DIR}/DayZServer_x64.exe" ]]
+}
+
+has_steam_username() {
+  [[ -n "${STEAM_USERNAME:-}" ]]
+}
+
+print_steam_auth_help() {
+  cat <<EOF >&2
+
+[ERROR] STEAM_USERNAME não configurado.
+
+O DayZ Dedicated Server (App ID ${DAYZ_APP_ID}) requer login Steam com uma conta
+que possua a licença do servidor. O login anonymous NÃO funciona para este app.
+
+Configure em ${DAYZ_ENV_FILE}:
+
+  STEAM_USERNAME=seu_usuario_steam
+
+A senha NÃO deve ser armazenada em arquivo. Na primeira instalação, execute
+interativamente:
+
+  sudo ./deploy/linux/install_dayz.sh
+
+O script solicitará a senha com read -s (não exibida, não gravada em disco).
+
+EOF
 }

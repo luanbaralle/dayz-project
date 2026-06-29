@@ -44,7 +44,7 @@ deploy_env_file() {
   log_step "Configurando arquivo de ambiente: ${ENV_DEST}"
 
   if [[ -f "$ENV_DEST" ]]; then
-    log_info "Arquivo .env já existe — mantendo configuração existente."
+    log_info "Arquivo .env já existe — mantendo configuração existente (não sobrescrito)."
     return 0
   fi
 
@@ -53,12 +53,16 @@ deploy_env_file() {
     exit 1
   fi
 
+  # Garante diretório pai antes de copiar
+  ensure_dir "$(dirname "$ENV_DEST")" "${DAYZ_USER}:${DAYZ_USER}"
+
   cp "${SCRIPT_DIR}/.env.example" "$ENV_DEST"
   chown "${DAYZ_USER}:${DAYZ_USER}" "$ENV_DEST"
   chmod 600 "$ENV_DEST"
 
-  log_info "Arquivo .env criado a partir de .env.example"
-  log_warn "Revise ${ENV_DEST} e ajuste GIT_REPO_URL antes do deploy."
+  log_info "Arquivo .env criado a partir de deploy/linux/.env.example"
+  log_warn "Configure STEAM_USERNAME em ${ENV_DEST}"
+  log_warn "A senha Steam não é armazenada — será solicitada na primeira instalação."
 }
 
 clone_or_update_project() {
@@ -70,6 +74,7 @@ clone_or_update_project() {
     # shellcheck disable=SC1090
     source "$ENV_DEST"
     set +a
+    normalize_env_aliases
   fi
 
   if [[ -z "${GIT_REPO_URL:-}" || "${GIT_REPO_URL}" == *"SEU_USUARIO"* ]]; then
