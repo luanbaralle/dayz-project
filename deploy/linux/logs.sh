@@ -2,8 +2,10 @@
 # =============================================================================
 # logs.sh — Exibe logs do servidor em tempo real
 # =============================================================================
-# Uso: ./logs.sh [arquivo]
-# Sem argumentos: segue DAYZ_MAIN_LOG e logs RPT recentes nos profiles
+# Uso:
+#   ./logs.sh              # tail de dayz-server.log + .RPT + script_*.log
+#   ./logs.sh /caminho/log # tail de arquivo específico
+#   ./logs.sh --tmux       # anexar à sessão tmux (opcional)
 # =============================================================================
 
 set -euo pipefail
@@ -24,6 +26,11 @@ find_latest_rpt() {
     | sort -rn | head -n1 | cut -d' ' -f2- || true
 }
 
+find_latest_script_log() {
+  find "$DAYZ_PROFILES_DIR" -maxdepth 1 -name "script_*.log" -type f -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | head -n1 | cut -d' ' -f2- || true
+}
+
 show_tmux_logs() {
   if tmux has-session -t "$DAYZ_TMUX_SESSION" 2>/dev/null; then
     log_info "Sessão tmux ativa — anexando à sessão ${DAYZ_TMUX_SESSION}"
@@ -32,6 +39,8 @@ show_tmux_logs() {
     tmux attach-session -t "$DAYZ_TMUX_SESSION"
     exit 0
   fi
+  log_error "Sessão tmux não encontrada: ${DAYZ_TMUX_SESSION}"
+  exit 1
 }
 
 tail_log_file() {
@@ -62,15 +71,15 @@ tail_combined_logs() {
   fi
 
   local latest_script_log
-  latest_script_log="$(find "$DAYZ_PROFILES_DIR" -maxdepth 1 -name "script_*.log" -type f -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | head -n1 | cut -d' ' -f2- || true)"
+  latest_script_log="$(find_latest_script_log)"
   if [[ -n "$latest_script_log" && -f "$latest_script_log" ]]; then
     files+=("$latest_script_log")
   fi
 
   if [[ ${#files[@]} -eq 0 ]]; then
     log_error "Nenhum arquivo de log encontrado."
-    log_info "Inicie o servidor com start.sh ou especifique um arquivo: ./logs.sh /caminho/log"
+    log_info "Esperado: ${DAYZ_MAIN_LOG} e/ou ${DAYZ_PROFILES_DIR}/*.RPT"
+    log_info "Inicie o servidor com start.sh ou especifique: ./logs.sh /caminho/log"
     exit 1
   fi
 
@@ -89,8 +98,7 @@ tail_combined_logs() {
 # -----------------------------------------------------------------------------
 
 main() {
-  # Se servidor está em tmux, oferece attach direto
-  if [[ $# -eq 0 ]] && tmux has-session -t "$DAYZ_TMUX_SESSION" 2>/dev/null; then
+  if [[ "${1:-}" == "--tmux" ]]; then
     show_tmux_logs
   fi
 

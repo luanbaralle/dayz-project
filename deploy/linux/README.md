@@ -308,17 +308,20 @@ Sincroniza `config/`, `profiles/` e `missions/` do repositório para runtime via
 ### Monitoramento
 
 ```bash
-./status.sh     # Painel de diagnóstico (servidor, mods, Wine, missão, versão)
-./logs.sh       # Tail em tempo real dos logs
-./validate.sh   # Validação completa do manifest e ambiente
+./logs.sh           # tail de dayz-server.log + .RPT (recomendado)
+./logs.sh --tmux    # anexar à sessão tmux (opcional)
+./status.sh         # Painel de diagnóstico (servidor, mods, Wine, missão, versão)
+./validate.sh       # Validação completa do manifest e ambiente
 ```
 
-Para anexar à sessão tmux do servidor:
+Logs do servidor:
 
-```bash
-tmux attach-session -t dayz-server
-# Ctrl+B, depois D para desanexar
-```
+| Arquivo | Conteúdo |
+|---------|----------|
+| `logs/dayz-server.log` | stdout/stderr do Wine + mensagens de boot |
+| `profiles/*.RPT` | Log principal do DayZ (gerado pelo jogo) |
+| `profiles/*.ADM` | Admin log (com `-adminlog`) |
+| `profiles/script_*.log` | Scripts da missão |
 
 ---
 

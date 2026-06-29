@@ -40,6 +40,7 @@ install_base_packages() {
     gnupg
     locales
     python3-yaml
+    xvfb
   )
 
   apt_install "${packages[@]}"

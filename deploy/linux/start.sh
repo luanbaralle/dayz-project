@@ -57,7 +57,7 @@ start_in_tmux() {
   launch_resolve_mod_params
   launch_print_mod_summary
 
-  ensure_dir "$DAYZ_LOGS_DIR" "${DAYZ_USER}:${DAYZ_USER}"
+  launch_prepare_runtime_dirs
 
   local launch_script
   launch_script="$(launch_write_inner_script)"
