@@ -11,6 +11,7 @@ load_env() {
     source "$DAYZ_ENV_FILE"
     set +a
     normalize_env_aliases
+    resolve_steam_home
     return 0
   fi
 
@@ -20,6 +21,7 @@ load_env() {
     source "${DEPLOY_LINUX_DIR}/.env.example"
     set +a
     normalize_env_aliases
+    resolve_steam_home
     log_warn "Usando .env.example — configure ${DAYZ_ENV_FILE}"
     return 0
   fi
@@ -50,6 +52,7 @@ apply_env_defaults() {
   DAYZ_TMUX_SESSION="${DAYZ_TMUX_SESSION:-dayz-server}"
   DAYZ_MAIN_LOG="${DAYZ_MAIN_LOG:-${DAYZ_LOGS_DIR}/dayz-server.log}"
   normalize_env_aliases
+  resolve_steam_home
 }
 
 normalize_env_aliases() {
@@ -61,6 +64,36 @@ normalize_env_aliases() {
   DAYZ_PROFILES_DIR="${DAYZ_PROFILES_DIR:-$PROFILE_DIR}"
   STEAM_PLATFORM="${STEAM_PLATFORM:-${STEAMCMD_PLATFORM:-windows}}"
   STEAMCMD_PLATFORM="${STEAMCMD_PLATFORM:-$STEAM_PLATFORM}"
+}
+
+dayz_user_home() {
+  local home
+  home="$(getent passwd "${DAYZ_USER:-ubuntu}" 2>/dev/null | cut -d: -f6)"
+  echo "${home:-/home/${DAYZ_USER:-ubuntu}}"
+}
+
+# STEAM_HOME — raiz da biblioteca Steam (contém steamapps/).
+# Workshop: $STEAM_HOME/steamapps/workshop/content/<app_id>/<item_id>
+# SteamCMD usa ~/Steam por padrão; auto-detecta instalações existentes.
+resolve_steam_home() {
+  if [[ -n "${STEAM_HOME:-}" ]]; then
+    return 0
+  fi
+
+  local user_steam
+  user_steam="$(dayz_user_home)/Steam"
+
+  if [[ -d "${user_steam}/steamapps" ]]; then
+    STEAM_HOME="${user_steam}"
+    return 0
+  fi
+
+  if [[ -d "${DAYZ_HOME}/steam/steamapps" ]]; then
+    STEAM_HOME="${DAYZ_HOME}/steam"
+    return 0
+  fi
+
+  STEAM_HOME="${DAYZ_HOME}/steam"
 }
 
 require_root() {

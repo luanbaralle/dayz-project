@@ -58,7 +58,7 @@ mods_workshop_content_path() {
   local workshop_id="$1"
   local app_id
   app_id="$(mods_workshop_app_id)"
-  echo "${STEAMCMD_DIR}/steamapps/workshop/content/${app_id}/${workshop_id}"
+  steam_workshop_item_path "$workshop_id" "$app_id"
 }
 
 mods_build_client_mod_argument() {

@@ -35,6 +35,7 @@ validate_environment() {
   mods_require_manifest
   steamcmd_require
   steamcmd_require_username
+  steam_ensure_home
   ensure_owned_dir "$DAYZ_SERVER_DIR"
   mkdir -p "${DAYZ_SERVER_DIR}/keys"
   chown "${DAYZ_USER}:${DAYZ_USER}" "${DAYZ_SERVER_DIR}/keys"
@@ -69,6 +70,7 @@ copy_workshop_mod_to_server() {
 
   if [[ ! -d "$content_path" ]]; then
     log_error "Conteúdo Workshop não encontrado: ${content_path}"
+    log_error "Biblioteca Steam (STEAM_HOME): ${STEAM_HOME}"
     log_error "Mod: ${name:-${folder}} (ID ${workshop_id})"
     exit 1
   fi
@@ -107,7 +109,7 @@ download_all_workshop_mods() {
 
   log_step "Baixando mods Workshop via SteamCMD (sessão única)"
   steamcmd_prompt_password_if_needed
-  steamcmd_run_logged_in "${workshop_args[@]}"
+  steamcmd_run_workshop_logged_in "${workshop_args[@]}"
 }
 
 install_workshop_mods_to_server() {

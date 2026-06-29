@@ -84,7 +84,9 @@ main() {
   install_steamcmd_dependencies
   download_steamcmd
   verify_steamcmd
+  steam_ensure_home
   log_info "SteamCMD pronto em ${STEAMCMD_DIR}"
+  log_info "Biblioteca Steam: ${STEAM_HOME}"
 }
 
 main "$@"

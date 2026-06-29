@@ -96,6 +96,7 @@ print_steamcmd_panel() {
   local steamcmd_bin="${STEAMCMD_DIR}/steamcmd.sh"
   if [[ -x "$steamcmd_bin" ]] && [[ -f "${DAYZ_SERVER_DIR}/DayZServer_x64.exe" ]]; then
     status_ok "OK"
+    status_label "Biblioteca" "${STEAM_HOME}"
   elif [[ -x "$steamcmd_bin" ]]; then
     status_warn "SteamCMD OK — DayZ Server não instalado"
   else

@@ -239,7 +239,8 @@ Variáveis principais:
 | `DAYZ_SERVER_DIR` | Instalação Steam | `/home/ubuntu/dayz/server` |
 | `PROJECT_DIR` | Repositório Git | `/home/ubuntu/dayz/project` |
 | `PROFILE_DIR` | Perfis runtime | `/home/ubuntu/dayz/profiles` |
-| `STEAMCMD_DIR` | SteamCMD | `/home/ubuntu/dayz/steamcmd` |
+| `STEAMCMD_DIR` | Binário SteamCMD | `/home/ubuntu/dayz/steamcmd` |
+| `STEAM_HOME` | Biblioteca Steam (workshop, steamapps) | auto: `~/Steam` ou `$DAYZ_HOME/steam` |
 | `STEAM_USERNAME` | Login Steam com licença DayZ (**obrigatório**) | *(configurar)* |
 | `STEAM_PLATFORM` | Plataforma SteamCMD | `windows` |
 | `DAYZ_APP_ID` | Steam App ID | `223350` |
@@ -358,6 +359,23 @@ wine DayZServer_x64.exe
 ```
 
 > **Mods:** `mods/manifest.yaml` é a fonte de verdade. `start.sh` gera `-mod=` e `-serverMod=` automaticamente a partir do manifest (sem variáveis no `.env`).
+
+### Biblioteca Steam (`STEAM_HOME`)
+
+O SteamCMD separa dois caminhos:
+
+| Variável | Conteúdo |
+|----------|----------|
+| `STEAMCMD_DIR` | Binário `steamcmd.sh` |
+| `STEAM_HOME` | Biblioteca Steam (`steamapps/`, workshop) |
+
+Downloads Workshop vão para:
+
+```
+$STEAM_HOME/steamapps/workshop/content/<app_id>/<item_id>
+```
+
+Por padrão o SteamCMD usa `~/Steam` do usuário `DAYZ_USER`. A infraestrutura resolve `STEAM_HOME` automaticamente (VPS existente) ou consolida em `$DAYZ_HOME/steam` (instalação nova).
 
 ### Manifest de mods (`mods/manifest.yaml`)
 

@@ -2,11 +2,45 @@
 # =============================================================================
 # lib/steam.sh — Execução SteamCMD com autenticação segura
 # =============================================================================
-
-# Requer: common.sh carregado (log_*, STEAM_*, DAYZ_USER, STEAMCMD_DIR)
+# STEAM_HOME  — biblioteca Steam (steamapps/, workshop/)
+# STEAMCMD_DIR — binário steamcmd.sh apenas
+# =============================================================================
 
 steamcmd_bin_path() {
   echo "${STEAMCMD_DIR}/steamcmd.sh"
+}
+
+steam_steamapps_dir() {
+  echo "${STEAM_HOME}/steamapps"
+}
+
+steam_workshop_content_root() {
+  echo "${STEAM_HOME}/steamapps/workshop/content"
+}
+
+# Caminho de um item Workshop baixado pelo SteamCMD.
+steam_workshop_item_path() {
+  local workshop_id="$1"
+  local app_id="$2"
+  echo "$(steam_workshop_content_root)/${app_id}/${workshop_id}"
+}
+
+# Prepara STEAM_HOME e alinha ~/Steam para instalações novas.
+steam_ensure_home() {
+  resolve_steam_home
+
+  local user_home user_steam
+  user_home="$(dayz_user_home)"
+  user_steam="${user_home}/Steam"
+
+  ensure_owned_dir "${STEAM_HOME}/steamapps/workshop/content"
+
+  # SteamCMD resolve a biblioteca via ~/Steam quando não há force_install_dir.
+  if [[ "$STEAM_HOME" != "$user_steam" ]] && [[ ! -e "$user_steam" ]]; then
+    ln -sfn "$STEAM_HOME" "$user_steam"
+    chown -h "${DAYZ_USER}:${DAYZ_USER}" "$user_steam" 2>/dev/null || true
+    log_info "Biblioteca Steam: ${user_steam} -> ${STEAM_HOME}"
+  fi
 }
 
 steamcmd_require() {
@@ -42,7 +76,6 @@ steamcmd_prompt_password_if_needed() {
     fi
     return 0
   fi
-  # Sem TTY: tenta autenticação em cache
   return 0
 }
 
@@ -50,14 +83,12 @@ steamcmd_clear_password() {
   unset STEAM_PASSWORD
 }
 
-# Executa SteamCMD como DAYZ_USER.
-# Uso: steamcmd_run +login ... +workshop_download_item ... +quit
 steamcmd_run() {
   local bin
   bin="$(steamcmd_bin_path)"
   local -a args=("$@")
 
-  log_info "SteamCMD: ${STEAM_USERNAME}@${STEAMCMD_DIR}"
+  log_info "SteamCMD: ${STEAM_USERNAME} | lib=${STEAM_HOME} | bin=${STEAMCMD_DIR}"
 
   if [[ "${EUID}" -eq 0 ]]; then
     sudo -u "$DAYZ_USER" "$bin" "${args[@]}"
@@ -66,8 +97,6 @@ steamcmd_run() {
   fi
 }
 
-# Monta argumentos +login e executa comandos SteamCMD.
-# Variável STEAM_PASSWORD em memória é opcional (primeira autenticação).
 steamcmd_run_logged_in() {
   local -a steam_args=()
   local platform="${STEAM_PLATFORM:-${STEAMCMD_PLATFORM:-windows}}"
@@ -88,4 +117,11 @@ steamcmd_run_logged_in() {
 
   steamcmd_run "${steam_args[@]}"
   steamcmd_clear_password
+}
+
+# Downloads Workshop: force_install_dir aponta para STEAM_HOME (biblioteca).
+steamcmd_run_workshop_logged_in() {
+  steam_ensure_home
+  log_info "Workshop content root: $(steam_workshop_content_root)"
+  steamcmd_run_logged_in +force_install_dir "$STEAM_HOME" "$@"
 }

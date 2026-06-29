@@ -39,12 +39,15 @@ create_directory_structure() {
     "$DAYZ_BACKUPS_DIR"
     "$DAYZ_LOGS_DIR"
     "$STEAMCMD_DIR"
+    "$STEAM_HOME"
   )
 
   for dir in "${directories[@]}"; do
     ensure_owned_dir "$dir"
     log_info "  ${dir}"
   done
+
+  steam_ensure_home
 }
 
 deploy_env_file() {
@@ -92,6 +95,7 @@ Diretórios:
   Backups:   ${DAYZ_BACKUPS_DIR}
   Logs:      ${DAYZ_LOGS_DIR}
   SteamCMD:  ${STEAMCMD_DIR}
+  Steam lib: ${STEAM_HOME}
 
 Configuração:
   ${ENV_DEST}

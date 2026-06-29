@@ -80,5 +80,7 @@ local_mods:
 
 ## Parâmetros de launch
 
-`-mod=` e `-serverMod=` são gerados a partir do manifest (Fase 3 — `start.sh`).
+`-mod=` e `-serverMod=` são gerados a partir do manifest (`start.sh`).
 **Não** configure mods em `.env`.
+
+Workshop baixa para `$STEAM_HOME/steamapps/workshop/content/` (ver `deploy/linux/README.md`).
